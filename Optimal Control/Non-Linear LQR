@@ -1,0 +1,56 @@
+
+"""
+Example: LQR-like optimal control using symbolic HJB
+
+Dynamics:
+    x_dot = x + u
+
+Running cost:
+    l(x,u) = x^2 + u^2
+
+Candidate value function:
+    V(x) = x^2
+
+Expected result:
+    u*(x) = -x
+"""
+
+import sympy as sp
+import numpy as np
+import matplotlib.pyplot as plt
+from src.hjb_engine import minimization, hjb_residual
+# symbols 
+x, u, rho = sp.symbols('x u rho', real=True)
+f = x + sp.sin(u)
+l = x**2 + u**2
+V = x**2
+# Hamiltonian 
+H = running_cost + dV_dx * f
+minimizer = minimization(H, u)
+u_star = sp.simplify(minimizer["candidate_controls"][0])
+H_star = sp.simplify(H.subs(u, u_star))
+print("Optimal control u*(x) =", u_star)
+print("Reduced Hamiltonian H*(x) =", H_star)
+# numeric evaluation 
+rho_val = 2.0
+u_star_num = sp.lambdify(x, u_star, "numpy")
+H_star_num = sp.lambdify(x, H_star, "numpy")
+
+x_grid = np.linspace(-5, 5, 400)
+u_vals = u_star_num(x_grid)
+H_vals = H_star_num(x_grid)
+plt.figure()
+plt.plot(x_grid, u_vals)
+plt.xlabel("x")
+plt.ylabel("u*(x)")
+plt.title("Optimal control law u*(x)")
+plt.grid(True)
+
+plt.figure()
+plt.plot(x_grid, H_vals)
+plt.xlabel("x")
+plt.ylabel("H*(x)")
+plt.title("Reduced Hamiltonian H*(x)")
+plt.grid(True)
+
+plt.show()

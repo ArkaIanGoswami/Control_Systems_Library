@@ -44,6 +44,118 @@ def hjb_residual(running_cost, f, dV_dx, value_function, horizon_type, rho=None)
         return sp.simplify(H_star - rho * value_function), "infinite"
     else:
         return H_star, "finite"
+def run_from_expressions(
+    f_expr: str,
+    l_expr: str,
+    V_expr: str,
+    horizon_type: str = "infinite",
+    N_expr: str | None = None,
+    n_val: float = 1.0,
+    rho_val: float = 0.0,
+    x_min: float = -5.0,
+    x_max: float = 5.0,
+    num_points: int = 400,
+    make_plots: bool = True,
+):
+    """
+    Programmatic API for examples: no input() calls.
+    Returns a dict of symbolic + numeric results.
+    """
+
+    # Parse expressions using your locals_map / symbols
+    f = sp.simplify(sp.sympify(f_expr, locals=locals_map))
+    running_cost = sp.simplify(sp.sympify(l_expr, locals=locals_map))
+    value_function = sp.simplify(sp.sympify(V_expr, locals=locals_map))
+
+    final_cost = None
+    if N_expr is not None:
+        final_cost = sp.simplify(sp.sympify(N_expr, locals=locals_map))
+
+    dV_dx = sp.diff(value_function, x)
+    H = sp.simplify(running_cost + dV_dx * f)
+    minimizer = minimization(H, u)
+
+    if not minimizer["candidate_controls"]:
+        return {
+            "ok": False,
+            "reason": "No closed-form u*",
+            "H": H,
+            "FOC": minimizer["solutions"],
+            "minimizer": minimizer,
+        }
+
+    u_star = sp.simplify(minimizer["candidate_controls"][0])
+    H_star = sp.simplify(H.subs(u, u_star))
+
+    residual_expr = None
+    if horizon_type == "infinite":
+        # residual: H*(x) - rho V(x)
+        residual_expr = sp.simplify(H_star - rho * value_function)
+
+    # Numeric substitution
+    param_subs = {n: float(n_val), rho: float(rho_val)}
+    u_star_num = sp.lambdify(x, sp.simplify(u_star.subs(param_subs)), "numpy")
+    H_star_num = sp.lambdify(x, sp.simplify(H_star.subs(param_subs)), "numpy")
+    H_num = sp.lambdify((x, u), sp.simplify(H.subs(param_subs)), "numpy")
+
+    x_grid = np.linspace(float(x_min), float(x_max), int(num_points))
+    u_vals = u_star_num(x_grid)
+    H_vals = H_star_num(x_grid)
+
+    if make_plots:
+        plt.figure()
+        plt.plot(x_grid, u_vals)
+        plt.xlabel("x")
+        plt.ylabel("u*(x)")
+        plt.title(f"Optimal control candidate u*(x) — {horizon_type} horizon")
+        plt.grid(True)
+
+        plt.figure()
+        plt.plot(x_grid, H_vals)
+        plt.xlabel("x")
+        plt.ylabel("H*(x)")
+        plt.title("Reduced Hamiltonian H*(x) = H(x, u*(x))")
+        plt.grid(True)
+
+        # contour plot
+        finite_mask = np.isfinite(u_vals)
+        if np.any(finite_mask):
+            umin = np.min(u_vals[finite_mask])
+            umax = np.max(u_vals[finite_mask])
+        else:
+            umin, umax = -2.0, 2.0
+
+        pad = 2.0
+        u_grid = np.linspace(umin - pad, umax + pad, 250)
+        X, U = np.meshgrid(x_grid, u_grid)
+        Z = H_num(X, U)
+
+        plt.figure()
+        cs = plt.contourf(X, U, Z, levels=40)
+        plt.colorbar(cs)
+        plt.plot(x_grid, u_vals, linewidth=2)
+        plt.xlabel("x")
+        plt.ylabel("u")
+        plt.title("H(x,u) contour with u*(x) overlay")
+
+        plt.show()
+
+    return {
+        "ok": True,
+        "f": f,
+        "l": running_cost,
+        "V": value_function,
+        "N": final_cost,
+        "dV_dx": dV_dx,
+        "H": H,
+        "u_star": u_star,
+        "H_star": H_star,
+        "residual": residual_expr,
+        "x_grid": x_grid,
+        "u_vals": u_vals,
+        "H_vals": H_vals,
+        "minimizer": minimizer,
+    }
 if __name__ == "__main__": 
     print("Enter the following expressions -")
     #Expressions (user defined)

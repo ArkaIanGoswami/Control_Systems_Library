@@ -175,10 +175,3 @@ if __name__ == "__main__":
     plt.title("H(x,u) contour with u*(x) overlay")
 
     plt.show()
-
-
-
-
-
-
-        

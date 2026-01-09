@@ -1,0 +1,49 @@
+import numpy as np
+from scipy.linalg import expm
+import matplotlib.pyplot as plt
+A_feedback = np.array([
+    [0, 0, 1, 0],
+    [0, 0, 0, 1],
+    [-30, -55, -11, -12],
+    [1, -1, 1, -1]
+])
+state_trajectory = []
+#x_0 = initial state
+#x(t) = state trajectory 
+
+initial_state = np.array([
+    [10],
+    [10],
+    [10],
+    [10],
+])
+
+t_final = int(input("Enter Upper Bound - "))                              
+step = float(input("Enter step size - "))                                 # time step
+t_points = np.arange(0, t_final + step, step)
+
+
+
+def exponentiation_and_flow(A_feedback, initial_state, t_final, step):
+    t_points = np.arange(0.0, t_final + step, step)
+    state_trajectory = []
+    for t in t_points:
+        x_t = expm(A_feedback * t) @ initial_state
+        state_trajectory.append(x_t.flatten())
+
+    state_trajectory = np.array(state_trajectory)
+    plt.figure(figsize=(9, 6))
+    for i in range(state_trajectory.shape[1]):
+        plt.plot(t_points, state_trajectory[:, i], label=f"$x_{i+1}(t)$")
+    plt.title("Closed-Loop State Trajectories")
+    plt.xlabel("Time (s)")
+    plt.ylabel("State Value")
+    plt.legend()
+    plt.grid(True)
+    plt.tight_layout()
+    plt.show()
+    return t_points, state_trajectory
+exponentiation_and_flow(A_feedback, initial_state, t_final, step)
+
+
+

@@ -1,0 +1,56 @@
+import numpy as np
+from scipy.linalg import expm
+from scipy.integrate import solve_ivp
+import matplotlib.pyplot as plt
+A_feedback = np.array([
+    [0, 0, 1, 0],
+    [0, 0, 0, 1],
+    [-30, -55, -11, -12],
+    [1, -1, 1, -1]
+])
+state_trajectory = []
+#x_0 = initial state
+#x(t) = state trajectory 
+initial_state = np.array([10.0, 10.0, 10.0, 10.0])
+B = np.array([[0.0], [0.0], [1.0], [0.0]])
+t_final = float(input("Enter Upper Bound - "))                              
+step = float(input("Enter step size - "))                                 # time step
+def state_dynamics(t, x):
+    return (A_feedback @ x) + 5.0 * (B.flatten()) * np.sin(t)
+t_span = (0.0, t_final)
+t_points = np.arange(0, t_final + step, step)
+
+sol = solve_ivp(state_dynamics, t_span, initial_state, t_eval=t_points, rtol=1e-8, atol=1e-10)
+state_trajectory = sol.y.T  # shape (len(t_points), 4)
+# Plot
+plt.figure(figsize=(9, 6))
+for i in range(state_trajectory.shape[1]):
+    plt.plot(t_points, state_trajectory[:, i], label=f"$x_{i+1}(t)$")
+
+plt.title(r"Closed-Loop State Trajectories with Forcing $u(t)=Kx+5\sin t$")
+plt.xlabel("Time (s)")
+plt.ylabel("State Value")
+plt.legend()
+plt.grid(True)
+
+plt.tight_layout()
+plt.show()
+
+
+omega = 1.0
+H = np.linalg.solve(1j*omega*np.eye(4) - A_feedback, B)   # (4x1) complex
+# steady-state: x_ss(t) = Re{ 5 * H * e^{j*omega*t} }
+amp = 5 * np.abs(H).flatten()   # per-state amplitudes
+print("Per-state steady-state amplitudes at ω=1 rad/s:", amp)
+plt.figure(figsize=(9,5))
+
+x_ss = []
+
+
+for i in range(4):
+    plt.plot(t, x_ss[i], label=fr"$x_{i+1}$ steady state")
+
+plt.ylim(-0.1, 0.1)  # zoom to see ~0.05–0.07 amplitudes
+plt.grid(True); plt.legend(); plt.xlabel("Time (s)"); plt.ylabel("State value")
+plt.title("Sinusoidal steady state at ω=1 rad/s")
+plt.tight_layout(); plt.show()

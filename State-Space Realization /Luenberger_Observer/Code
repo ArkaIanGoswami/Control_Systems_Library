@@ -1,0 +1,165 @@
+import numpy as np
+from scipy.integrate import solve_ivp
+import matplotlib.pyplot as plt
+# 1. System matrices (YOUR DSMS)
+A = np.array([
+    [ 0.,  0.,  1.,  0.],
+    [ 0.,  0.,  0.,  1.],
+    [-2.,  1., -1.,  1.],
+    [ 1., -1.,  1., -1.]
+])
+B = np.array([[0.0],
+              [0.0],
+              
+              [1.0],
+              [0.0]])
+# Observer matrix A - L C
+A_minus_LC = np.array([
+    [-8.,   0.,  1.,  0.],
+    [-12.,  0.,  0.,  1.],
+    [-22.,  1., -1.,  1.],
+    [-28., -1.,  1., -1.]
+])
+# Feedback gain K from earlier part
+K = np.array([28.0, 56.0, 10.0, 13.0])
+# (for information) closed-loop matrix A - BK (if feedback were u = -Kx + 5 sin t)
+
+BK = B @ K.reshape(1, 4)
+A_cl = A - BK
+# Initial conditions
+x0    = np.array([10.0, 10.0, 10.0, 10.0])   # true state IC
+xhat0 = np.array([0.0,  0.0,  0.0,  0.0])    # observer IC
+
+# -------------------------------------------------------
+# Helper: LC x = (A - (A - LC)) x
+# -------------------------------------------------------
+
+def LCx_from_A(A, A_minus_LC, x):
+    return (A - A_minus_LC) @ x
+# 2. Dynamics for open-loop and closed-loop
+def dynamics_open_loop(t, z):
+    """
+    (a),(b),(c): open-loop plant+observer, u(t) = 5 sin t.
+    z = [x; x_hat]
+    """
+    
+    x     = z[:4]
+    x_hat = z[4:]
+
+    u  = 5.0 * np.sin(t)
+    Bu = B.flatten() * u
+
+    x_dot    = A @ x + Bu
+    xhat_dot = A_minus_LC @ x_hat + Bu + LCx_from_A(A, A_minus_LC, x)
+
+    return np.concatenate([x_dot, xhat_dot])
+
+
+def dynamics_closed_loop(t, z):
+    """
+    (d): closed-loop with estimate in feedback:
+         u(t) = K x_hat(t) + 5 sin t
+    z = [x; x_hat]
+    """
+    x     = z[:4]
+    x_hat = z[4:]
+
+    u  = K @ x_hat + 5.0 * np.sin(t)
+    Bu = B.flatten() * u
+    x_dot    = A @ x + Bu
+    xhat_dot = A_minus_LC @ x_hat + Bu + LCx_from_A(A, A_minus_LC, x)
+    return np.concatenate([x_dot, xhat_dot])
+# 3. Simulation 
+def simulate_open_loop(t_final, dt=0.01):
+    z0  = np.concatenate([x0, xhat0])
+    sol = solve_ivp(dynamics_open_loop,
+                    (0.0, t_final), z0,
+                    max_step=dt, rtol=1e-8, atol=1e-10)
+    t        = sol.t
+    z_traj   = sol.y.T
+    x_traj   = z_traj[:, :4]
+    xhat_traj = z_traj[:, 4:]
+    e_traj   = x_traj - xhat_traj
+    return t, x_traj, xhat_traj, e_traj
+
+
+def simulate_closed_loop(t_final, dt=0.01):
+    z0  = np.concatenate([x0, xhat0])
+    sol = solve_ivp(dynamics_closed_loop,
+                    (0.0, t_final), z0,
+                    max_step=dt, rtol=1e-8, atol=1e-10)
+    t        = sol.t
+    z_traj   = sol.y.T
+    x_traj   = z_traj[:, :4]
+    xhat_traj = z_traj[:, 4:]
+    e_traj   = x_traj - xhat_traj
+    return t, x_traj, xhat_traj, e_traj
+
+#-Visualization
+
+def plot_part_a(t, x_traj, t_final):
+    plt.figure(figsize=(9, 5))
+    for i in range(4):
+        plt.plot(t, x_traj[:, i], label=f"x{i+1}(t)")
+    plt.xlabel("Time (s)")
+    plt.ylabel("State")
+    plt.title(f"(a) DSMS State Trajectories, 0 <= t <= {t_final}")
+    plt.grid(True)
+    plt.legend()
+    plt.tight_layout()
+def plot_part_b(t, xhat_traj, t_final):
+    plt.figure(figsize=(9, 5))
+    for i in range(4):
+        plt.plot(t, xhat_traj[:, i], label=f"x̂{i+1}(t)")
+    plt.xlabel("Time (s)")
+    plt.ylabel("Estimated state")
+    plt.title(f"(b) Observer State Trajectories, 0 <= t <= {t_final}")
+    plt.grid(True)
+    plt.legend()
+    plt.tight_layout()
+def plot_part_c(t, e_traj, t_final):
+    plt.figure(figsize=(9, 5))
+    for i in range(4):
+        plt.plot(t, e_traj[:, i], label=f"e{i+1}(t)")
+    plt.xlabel("Time (s)")
+    plt.ylabel("Estimation error")
+    plt.title(f"(c) Estimation Error Trajectories, 0 <= t <= {t_final}")
+    plt.grid(True)
+    plt.legend()
+    plt.tight_layout()
+
+
+def plot_part_d(t, x_traj, xhat_traj, e_traj, t_final):
+    # true vs estimate
+    plt.figure(figsize=(9, 5))
+    for i in range(4):
+        plt.plot(t, x_traj[:, i], label=f"x{i+1}(t) (true)")
+        plt.plot(t, xhat_traj[:, i], "--", label=f"x̂{i+1}(t) (estimate)")
+    plt.xlabel("Time (s)")
+    plt.ylabel("State")
+    plt.title(f"(d) Closed loop u(t)=K x̂(t)+5 sin(t), 0 <= t <= {t_final}")
+    plt.grid(True)
+    plt.legend(ncol=2)
+    plt.tight_layout()
+
+    # error in closed loop
+    plt.figure(figsize=(9, 5))
+    for i in range(4):
+        plt.plot(t, e_traj[:, i], label=f"e{i+1}(t)")
+    plt.xlabel("Time (s)")
+    plt.ylabel("Estimation error")
+    plt.title(f"(d) Closed-loop Estimation Error, 0 <= t <= {t_final}")
+    plt.grid(True)
+    plt.legend()
+    plt.tight_layout()
+for T in [50.0, 500.0]:
+    # (a)-(c): open-loop u = 5 sin t
+    t, x_traj, xhat_traj, e_traj = simulate_open_loop(T, dt=0.01)
+    plot_part_a(t, x_traj, T)
+    plot_part_b(t, xhat_traj, T)
+    plot_part_c(t, e_traj, T)
+
+    # (d) closed-loop with u = K x_hat + 5 sin t
+    t_cl, x_traj_cl, xhat_traj_cl, e_traj_cl = simulate_closed_loop(T, dt=0.01)
+    plot_part_d(t_cl, x_traj_cl, xhat_traj_cl, e_traj_cl, T)
+plt.show()

@@ -1,0 +1,183 @@
+import os
+import tkinter as tk
+from tkinter import ttk, filedialog, messagebox
+from tkinter.scrolledtext import ScrolledText
+
+#The following lines are for the GUI
+class TFApp(tk.Tk):
+    def __init__(self):
+        super().__init__()
+        self.title("Symbolic Transfer Function from Excel")
+        self.geometry("980x720")
+        self.minsize(900, 600)
+
+        self.excel_path = tk.StringVar()
+        self.sheetA = tk.StringVar()
+        self.sheetB = tk.StringVar()
+        self.sheetC = tk.StringVar()
+        self.sheetD = tk.StringVar()
+        self.show_inverse = tk.BooleanVar(value=False)
+
+        self._build_ui()
+
+    def _build_ui(self):
+        pad = {"padx": 8, "pady": 6}
+
+        # Top: file selection
+        file_frame = ttk.Frame(self)
+        file_frame.pack(fill="x", **pad)
+
+        ttk.Label(file_frame, text="Excel file:").pack(side="left")
+        self.file_entry = ttk.Entry(file_frame, textvariable=self.excel_path, width=60)
+        self.file_entry.pack(side="left", padx=6)
+        ttk.Button(file_frame, text="Browse…", command=self.browse_file).pack(side="left")
+
+        # Sheet selectors
+        sheets_frame = ttk.LabelFrame(self, text="Sheet selection")
+        sheets_frame.pack(fill="x", **pad)
+
+        self.comboA = self._make_sheet_row(sheets_frame, "A sheet:", self.sheetA)
+        self.comboB = self._make_sheet_row(sheets_frame, "B sheet:", self.sheetB)
+        self.comboC = self._make_sheet_row(sheets_frame, "C sheet:", self.sheetC)
+        self.comboD = self._make_sheet_row(sheets_frame, "D sheet:", self.sheetD)
+
+        # Options + Buttons
+        options_frame = ttk.Frame(self)
+        options_frame.pack(fill="x", **pad)
+        ttk.Checkbutton(options_frame, text="Show (sI - A)^{-1} (may be slow for large A)",
+                        variable=self.show_inverse).pack(side="left")
+
+        ttk.Button(options_frame, text="Compute", command=self.compute).pack(side="right")
+        ttk.Button(options_frame, text="Export Results…", command=self.export_results).pack(side="right", padx=8)
+
+        # Output area
+        self.output = ScrolledText(self, height=28, wrap="word", font=("Consolas", 11))
+        self.output.pack(fill="both", expand=True, **pad)
+
+        # Status bar
+        self.status = ttk.Label(self, text="Ready.", anchor="w")
+        self.status.pack(fill="x", side="bottom")
+
+    def _make_sheet_row(self, parent, label, var):
+        row = ttk.Frame(parent)
+        row.pack(fill="x", padx=8, pady=4)
+        ttk.Label(row, text=label, width=14).pack(side="left")
+        combo = ttk.Combobox(row, textvariable=var, state="readonly", width=30)
+        combo.pack(side="left")
+        return combo
+
+    def browse_file(self):
+        path = filedialog.askopenfilename(
+            title="Select Excel workbook",
+            filetypes=[("Excel files", "*.xlsx *.xls"), ("All files", "*.*")]
+        )
+        if not path:
+            return
+        self.excel_path.set(path)
+        try:
+            xls = pd.ExcelFile(path)
+            names = xls.sheet_names
+            for combo in (self.comboA, self.comboB, self.comboC, self.comboD):
+                combo["values"] = names
+                if names:
+                    combo.current(0)
+            self.status.config(text=f"Loaded sheets: {', '.join(names)}")
+        except Exception as e:
+            messagebox.showerror("Error", f"Could not read Excel file:\n{e}")
+
+    def compute(self):
+        self.output.delete("1.0", "end")
+        path = self.excel_path.get().strip()
+        if not path:
+            messagebox.showwarning("Missing file", "Please choose an Excel workbook.")
+            return
+        if not os.path.exists(path):
+            messagebox.showerror("File not found", f"'{path}' was not found.")
+            return
+
+        A_sheet = self.sheetA.get().strip()
+        B_sheet = self.sheetB.get().strip()
+        C_sheet = self.sheetC.get().strip()
+        D_sheet = self.sheetD.get().strip()
+        if not (A_sheet and B_sheet and C_sheet and D_sheet):
+            messagebox.showwarning("Missing sheets", "Please select sheet names for A, B, C, and D.")
+            return
+
+        self.status.config(text="Reading matrices…")
+        self.update_idletasks()
+        try:
+            A = sheet_to_sympy_matrix(path, A_sheet)
+            B = sheet_to_sympy_matrix(path, B_sheet)
+            C = sheet_to_sympy_matrix(path, C_sheet)
+            D = sheet_to_sympy_matrix(path, D_sheet)
+        except Exception as e:
+            messagebox.showerror("Error reading sheets", f"Could not parse matrices:\n{e}")
+            self.status.config(text="Error reading sheets.")
+            return
+
+        try:
+            self.status.config(text="Computing symbolic results…")
+            self.update_idletasks()
+            s, det_R, R_inv, G = compute_transfer_function(
+                A, B, C, D, show_inverse=self.show_inverse.get()
+            )
+        except Exception as e:
+            messagebox.showerror("Computation error", f"An error occurred during computation:\n{e}")
+            self.status.config(text="Computation failed.")
+            return
+
+        # Build output text
+        parts = []
+        parts.append("=== Input matrices ===\n")
+        parts.append("A =\n" + pretty_matrix(A) + "\n\n")
+        parts.append("B =\n" + pretty_matrix(B) + "\n\n")
+        parts.append("C =\n" + pretty_matrix(C) + "\n\n")
+        parts.append("D =\n" + pretty_matrix(D) + "\n\n")
+
+        parts.append("=== Results ===\n")
+        parts.append("det(sI - A) =\n" + pretty_matrix(det_R) + "\n\n")
+
+        if R_inv is not None:
+            parts.append("(sI - A)^(-1) =\n" + pretty_matrix(R_inv) + "\n\n")
+        else:
+            parts.append("(sI - A)^(-1) = [skipped — enable the checkbox to compute]\n\n")
+
+        parts.append("G(s) = C (sI - A)^(-1) B + D\n")
+        parts.append("G(s) =\n" + pretty_matrix(G) + "\n\n")
+
+        # Entrywise numerators/denominators
+        parts.append("Entrywise numerators/denominators:\n")
+        for i in range(G.rows):
+            for j in range(G.cols):
+                num, den = sp.fraction(G[i, j])
+                parts.append(f"G[{i+1},{j+1}](s) =\n")
+                parts.append(pretty_matrix(sp.simplify(num/den)) + "\n")
+                parts.append("  Numerator-  " + sp.sstr(sp.expand(num)) + "\n")
+                parts.append("  Denominator- " + sp.sstr(sp.expand(den)) + "\n\n")
+
+        text = "".join(parts)
+        self.output.insert("1.0", text)
+        self.status.config(text="Done.")
+
+    def export_results(self):
+        data = self.output.get("1.0", "end").strip()
+        if not data:
+            messagebox.showinfo("Nothing to export", "No results to export. Compute first.")
+            return
+        path = filedialog.asksaveasfilename(
+            title="Export results",
+            defaultextension=".txt",
+            filetypes=[("Text file", "*.txt"), ("All files", "*.*")]
+        )
+        if not path:
+            return
+        try:
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(data)
+            messagebox.showinfo("Exprted", f"Results saved to:\n{path}")
+        except Exception as e:
+            messagebox.showerror("Export failed", f"Could not write file:\n{e}")
+
+
+if __name__ == "__main__":
+    TFApp().mainloop()

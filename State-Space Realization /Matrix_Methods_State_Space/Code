@@ -1,0 +1,41 @@
+import pandas as pd
+import sympy as sp
+def sheet_to_sympy_matrix(xlsx_path, sheet_name, fill_value=0):
+    """Excel blocks may have variables, symbolic constants, or numerics"""
+    df = pd.read_excel(xlsx_path, sheet_name=sheet_name, header=None, dtype=object)
+    df = df.fillna(fill_value)
+    rows = []
+    
+    for _, row in df.iterrows():
+        rows.append([sp.sympify(str(v)) for v in row.to_list()])
+    return sp.Matrix(rows)
+
+def pretty_matrix(M):
+    """Rturns unicode"""
+    return sp.pretty(M, use_unicode=True)
+
+def compute_transfer_function(A, B, C, D, show_inverse=False):
+    """Computes the determinant and inverse of the resolvent. In addition, when needed, computes the system transfer function too."""
+    n, mA = A.shape
+    if n != mA:
+        raise ValueError("Matrix A must be square (n×n).")
+    if B.rows != n:
+        raise ValueError("B must have the same number of rows as A (n×m).")
+    if C.cols != n:
+        raise ValueError("C must have the same number of columns as A (p×n).")
+    if D.shape != (C.rows, B.cols):
+        raise ValueError("D must match the shape of C*B (p×m).")
+
+    s = sp.symbols('s')
+    R = s*sp.eye(n) - A
+
+    det_R = sp.expand(R.det())
+    X = R.LUsolve(B)      # n×m
+    G = sp.simplify(C * X + D)   # p×m (allows MIMO)
+    G_together = G.applyfunc(lambda gij: sp.together(sp.simplify(gij)))
+
+#maybe use a way to convey singularity, if the given matgrix is not invertible
+    R_inv = None
+    if show_inverse:
+        R_inv = R.inv()
+    return s, det_R, R_inv, G_together
